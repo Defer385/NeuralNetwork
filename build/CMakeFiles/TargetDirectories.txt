@@ -1,0 +1,3 @@
+D:/gitRepos/NeuralNetwork/build/CMakeFiles/NeuralNet_modif_4.dir
+D:/gitRepos/NeuralNetwork/build/CMakeFiles/ALL_BUILD.dir
+D:/gitRepos/NeuralNetwork/build/CMakeFiles/ZERO_CHECK.dir

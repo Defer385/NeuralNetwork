@@ -10,6 +10,10 @@
 
 #include "NeuralNetwork.h"
 
+#ifndef TRAIN_DIR
+#define TRAIN_DIR "train"
+#endif
+
 int generateRandomNumber(int _min, int _max)
 {
     std::random_device device;
@@ -21,16 +25,13 @@ int generateRandomNumber(int _min, int _max)
 
 int main()
 {
-
-
+    std::string folder = TRAIN_DIR "/MNIST/digits_zero_one/";
+    std::cout << "Using train folder: " << folder << "\n";
 
     std::vector<double> data = { 0,0,0,0,0,0,0 ,0,0,0,0,0,0,0, 0,0,0,0,0,0,0, 0,0,0,0,0,0,0, 0,0,0,0,0,0,0, 0,0,0,0,0,0,0, 0,0,0,0,0,0,0 };
     std::vector<double> want = { 0,0,0 };
 
     NeuralNetwork nn({ 784, 256,128,64,10 }, 0.0005, LEAKY_RELU, SOFTMAX);
-
-    std::string folder = "train/MNIST/digits_zero_one/";
-
 
     int countIter = 0;
 
@@ -133,7 +134,7 @@ int main()
                     {
                         waitingSymbol = "|";
                     }
-                    system("cls");
+                    std::cout << "\033c";
                     std::cout << "Training..." << waitingSymbol << "PLease wait..." << waitingSymbol << "[" << nn.totalError << "]\n";
                 }
             }
