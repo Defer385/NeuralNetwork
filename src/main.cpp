@@ -1,4 +1,4 @@
-#include <vector>
+﻿#include <vector>
 #include <random>
 #include <cmath>
 #include <iostream>
@@ -6,9 +6,10 @@
 #include <sstream>
 #include <format>
 #include <assert.h>
-
+#include <memory>
 
 #include "NeuralNetwork.h"
+#include "ConvLayer.h"
 
 #ifndef TRAIN_DIR
 #define TRAIN_DIR "train"
@@ -25,228 +26,193 @@ int generateRandomNumber(int _min, int _max)
 
 int main()
 {
+    NeuralNetwork nn({ 6272,256,10 }, 0.0005, RELU, SOFTMAX);
+    //{ hGhostSize , wGhostSize, countFilters, countInputGhosts, filterSize, padding};
+    nn.CnnLayers.push_back(std::make_unique<ConvLayer>(28, 28, 4, 1, 3, 1));
+
+    nn.CnnLayers.push_back(std::make_unique<ConvLayer>(28, 28, 8, 4, 3, 1));
+
+    nn.checkСompatibility(); //NECESSARILY to CNN
+
+    int fileNumber = 0;
+
     std::string folder = TRAIN_DIR "/MNIST/digits_zero_one/";
-    std::cout << "Using train folder: " << folder << "\n";
+    std::string fileName = "mnist_";
+    
+    std::cout << "Use folder to train -> " << folder + fileName << "\n";
+    std::cin.ignore();
 
-    std::vector<double> data = { 0,0,0,0,0,0,0 ,0,0,0,0,0,0,0, 0,0,0,0,0,0,0, 0,0,0,0,0,0,0, 0,0,0,0,0,0,0, 0,0,0,0,0,0,0, 0,0,0,0,0,0,0 };
-    std::vector<double> want = { 0,0,0 };
-
-    NeuralNetwork nn({ 784, 256,128,64,10 }, 0.0005, LEAKY_RELU, SOFTMAX);
-
-    int countIter = 0;
-
-    double secondToTrain = 0;
-
-    if (true)
+    while (fileNumber < 50000)
     {
-
-        std::cin.ignore();
-        clock_t startClock = clock();
-        countIter = 0;
-        while (countIter < 19000)
+        if (fileNumber < 49950)
         {
+            std::string fullPath = folder + fileName + std::to_string(generateRandomNumber(0,19000)) + ".txt";
 
-            data.clear();
-            want.clear();
+            
 
-            std::string filename = folder + "mnist_" + std::to_string(generateRandomNumber(1, 18999)) + ".txt";
+            // Открываем файл
+            std::ifstream file(fullPath);
 
-            std::ifstream file(filename);
-            if (!file.is_open())
-            {
-                std::cerr << "file open error: " << filename << std::endl;
+            if (!file.is_open()) {
+                std::cerr << "file open error: " << fullPath << std::endl;
                 return 1;
             }
 
-            std::string first_line;
-            if (std::getline(file, first_line))
+            std::vector<double> want;
+
+            std::string firstLine;
+            if (std::getline(file, firstLine))
             {
-                std::istringstream iss(first_line);
-                int value;
+                std::stringstream ss(firstLine);
 
-                while (iss >> value)
+                for (int i = 0; i < 10; i++)
                 {
-                    want.push_back(value);
+                    int digit;
+                    if (!(ss >> digit))
+                    {
+                        std::cerr << "not 10" << std::endl;
+                        return 1;
+                    }
+                    want.push_back(digit);
                 }
-
             }
             else
             {
-                std::cerr << "error" << std::endl;
+                std::cerr << "empty file" << std::endl;
                 return 1;
             }
 
-            std::string line;
-            int row_count = 0;
-            while (std::getline(file, line))
+            std::vector<std::vector<double>> matrix(28, std::vector<double>(28));
+
+            for (int i = 0; i < 28; i++)
             {
-                if (line.empty()) continue;
-
-                std::istringstream iss(line);
-                double pixel;
-
-                while (iss >> pixel)
+                std::string line;
+                if (!std::getline(file, line))
                 {
-                    data.push_back(pixel);
+                    std::cerr << "no 28x28" << std::endl;
+                    return 1;
                 }
 
-                row_count++;
-            }
-
-            //for (int i = 0; i < data.size(); i++)
-            //{
-            //    std::cout << "\n  --  " << data[i] << "\n";
-            //}
-
-            //std::cout << "\n\n" << data.size();
-
-
-            //for (int i = 0; i < want.size(); i++)
-            //{
-            //    std::cout << "\n  --  " << want[i] << "\n";
-            //}
-
-            //std::cout << "\n\n" << want.size();
-            nn.SLtrain(data, want);
-            if (false)
-            {
-                std::cout << "\n\nError -> " << nn.totalError << "\n" << "Count iter. -> " << countIter << "\n" << "train file -> " << filename << "\n";
-            }
-            else
-            {
-                //Wait animation
-                static std::string waitingSymbol = "|";
-                if (countIter % 2 == 0)
+                std::stringstream ss(line);
+                for (int j = 0; j < 28; j++)
                 {
-                    if (waitingSymbol == "|")
+                    if (!(ss >> matrix[i][j]))
                     {
-                        waitingSymbol = "/";
+                        std::cout << fullPath << "\n";
+                        std::cerr << "error in " << i + 2 << " no numbers" << std::endl;
+
+                        return 1;
                     }
-                    else if (waitingSymbol == "/")
-                    {
-                        waitingSymbol = "-";
-                    }
-                    else if (waitingSymbol == "-")
-                    {
-                        waitingSymbol = "\\";
-                    }
-                    else if (waitingSymbol == "\\")
-                    {
-                        waitingSymbol = "|";
-                    }
-                    std::cout << "\033c";
-                    std::cout << "Training..." << waitingSymbol << "PLease wait..." << waitingSymbol << "[" << nn.totalError << "]\n";
                 }
             }
-            //std::vector<double> result = nn.forward(data);
 
-            //for (int i = 0; i < 10; i++)
-            //{
-            //    std::cout << i << "----" << result[i] << "\n\n";
-            //}
+            std::vector<std::vector<std::vector<double>>> tensor(1, matrix);
 
+            nn.CNN_With_FCN_SL_train(tensor, want);
 
-            //std::cin >> countIter;
+            std::cout << "\n" << "filenumber ->" << fileNumber << "\n";
 
-
-            countIter++;
-        }
-        clock_t endClock = clock();
-        secondToTrain = static_cast<double>(difftime(endClock, startClock) / 1000.0);
-
-    }
-
-    std::cout << "\nend\n" << "0\n";
-
-
-    if (countIter != 0)
-    {
-        std::cout << "\n\nNumber of iterations: "<< countIter << "\nTraining time : " << secondToTrain << "sec. \n\n\n";
-    }
-
-    for (int k = 0; k < 100; k++)
-    {
-
-        data.clear();
-        want.clear();
-
-        std::string filename = folder + "mnist_" + std::to_string(generateRandomNumber(18001, 19999)) + ".txt";
-
-        std::ifstream file(filename);
-        if (!file.is_open())
-        {
-            std::cerr << "file open error: " << filename << std::endl;
-            return 1;
-        }
-
-        std::string first_line;
-        if (std::getline(file, first_line))
-        {
-            std::istringstream iss(first_line);
-            int value;
-
-            while (iss >> value)
-            {
-                want.push_back(value);
-            }
+            fileNumber++;
 
         }
         else
         {
-            std::cerr << "error" << std::endl;
-            return 1;
-        }
+            std::string folder = "train/MNIST/digits_zero_one/";
+            std::string fileName = "mnist_";
 
-        std::string line;
-        int row_count = 0;
+            std::string fullPath = folder + fileName + std::to_string(generateRandomNumber(19001, 19999)) + ".txt";
 
-        while (std::getline(file, line))
-        {
-            if (line.empty()) continue;
+            std::ifstream file(fullPath);
 
-            std::istringstream iss(line);
-            double pixel;
-
-            while (iss >> pixel)
-            {
-                data.push_back(pixel);
+            if (!file.is_open()) {
+                std::cerr << "file open error: " << fullPath << std::endl;
+                return 1;
             }
 
-            row_count++;
-        }
-
-        std::cout << "     \n\n" << "File to test -> " << filename << "        \n\n" << "File data -> \n";
+            std::vector<double> want;
 
 
-        std::vector<double> result = nn.forward(data);
-
-
-        for (int i = 0; i < data.size(); i++)
-        {
-            if (i % 28 == 0)
+            std::string firstLine;
+            if (std::getline(file, firstLine))
             {
-                std::cout << "\n";
-            }
+                std::stringstream ss(firstLine);
 
-            if (data[i] > 0)
-            {
-                std::cout << '#';
+                for (int i = 0; i < 10; i++)
+                {
+                    int digit;
+                    if (!(ss >> digit))
+                    {
+                        std::cerr << "not 10" << std::endl;
+                        return 1;
+                    }
+                    want.push_back(digit);
+                }
             }
             else
             {
-                std::cout << ' ';
+                std::cerr << "empty file" << std::endl;
+                return 1;
             }
-        }
 
-        std::cout << "\n\n";
+            std::vector<std::vector<double>> matrix(28, std::vector<double>(28));
 
+            for (int i = 0; i < 28; i++)
+            {
+                std::string line;
+                if (!std::getline(file, line))
+                {
+                    std::cerr << "no 28x28" << std::endl;
+                    return 1;
+                }
 
-        for (int i = 0; i < 10; i++)
-        {
-            std::cout << i << "----" << result[i] * 100 << "%" << "\n";
+                std::stringstream ss(line);
+                for (int j = 0; j < 28; j++)
+                {
+                    if (!(ss >> matrix[i][j]))
+                    {
+                        std::cout << fullPath << "\n";
+                        std::cerr << "error in " << i + 2 << " no numbers" << std::endl;
+
+                        return 1;
+                    }
+                }
+            }
+
+            std::vector<std::vector<std::vector<double>>> tensor(1, matrix);
+
+            std::vector<double> getResult = nn.MultForward(tensor);
+
+            for (int h = 0; h < 28; h++)
+            {
+                for (int w = 0; w < 28; w++)
+                {
+                    if (matrix[h][w] == 0)
+                    {
+                        std::cout << " ";
+                    }
+                    else
+                    {
+                        std::cout << "#";
+                    }
+                }
+                std::cout << "\n";
+            }
+
+            std::cout << "result\n";
+
+            for (int i = 0; i < 10; i++)
+            {
+                std::cout << i << " " << getResult[i] * 100.0 << "%\n";
+            }
+
+            
+
+            fileNumber++;
         }
     }
+    
+    
 
-    nn.trySaveWeight();
+    return 0;
 
 }

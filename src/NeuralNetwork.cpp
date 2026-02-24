@@ -1,4 +1,4 @@
-#include "NeuralNetwork.h"
+﻿#include "NeuralNetwork.h"
 
 
 #include <cmath>
@@ -10,9 +10,9 @@
 #include <sstream>
 #include <string>
 #include <iostream>
+#include <iomanip>
 
 //activations 
-
 
 double NeuralNetwork::functionActivation(double _input, ActivationsType _AT)
 {
@@ -91,6 +91,40 @@ void NeuralNetwork::applySoftmax(std::vector<double>& _inputData)
 //====================================================================================================================================================================================================
 //====================================================================================================================================================================================================
 
+void NeuralNetwork::checkСompatibility()
+{
+	countCnnLayers = CnnLayers.size();
+	//ConvLayer(int _h, int _w, int _countFilters, int _countInputGhosts, int _coreSize, int _padding)
+	for (int l = 0; l < countCnnLayers - 1; l++)
+	{
+		std::vector<int> currentConfig = CnnLayers[l]->returnConfig();
+		std::vector<int> nextConfig = CnnLayers[l + 1]->returnConfig();
+
+
+		// h and w
+		if (currentConfig[0] + 2 * currentConfig[5] - currentConfig[4] + 1 != nextConfig[0])
+		{
+			throw std::invalid_argument("Ghost H incompatibility");
+		}
+		if (currentConfig[1] + 2 * currentConfig[5] - currentConfig[4] + 1 != nextConfig[1])
+		{
+			throw std::invalid_argument("Ghost W incompatibility");
+		}
+		//count ghosts
+		if (currentConfig[2] != nextConfig[3])
+		{
+			throw std::invalid_argument("Incorrect count filters or input ghost");
+		}
+
+	}
+
+
+}
+
+//====================================================================================================================================================================================================
+//====================================================================================================================================================================================================
+//====================================================================================================================================================================================================
+
 void NeuralNetwork::initializeNeuralNet()
 {
 	//it requires resizing the cubic vector of weights and generating random weights
@@ -152,6 +186,7 @@ void NeuralNetwork::initializeNeuralNet()
 //====================================================================================================================================================================================================
 //====================================================================================================================================================================================================
 
+
 void NeuralNetwork::reInit(std::vector<int> _Layers, double _alpha, ActivationsType _hiddenActivation, ActivationsType _outputActivation)
 {
 	LayerNeuronSizes = _Layers;
@@ -170,6 +205,12 @@ void NeuralNetwork::reInit(std::vector<int> _Layers, double _alpha, ActivationsT
 
 std::vector<double> NeuralNetwork::forward(std::vector<double> _inputData)
 {
+	if (_inputData.size() != LayerNeuronSizes[0])
+	{
+		throw std::invalid_argument("discrepancy between the output data and the first layer");
+	}
+
+
 	for (int i = 0; i < inputSize; i++)
 	{
 		layers[0].neurons[i].value = _inputData[i];
@@ -228,6 +269,61 @@ std::vector<double> NeuralNetwork::forward(std::vector<double> _inputData)
 	}
 
 	return result;
+}
+
+//====================================================================================================================================================================================================
+//====================================================================================================================================================================================================
+//====================================================================================================================================================================================================
+
+std::vector<double> NeuralNetwork::CnnForward(std::vector<std::vector<std::vector<double>>> _inputData)
+{
+	std::vector<std::vector<std::vector<double>>> layerResult;
+	
+	for (int l = 0; l < countCnnLayers; l++)
+	{
+
+		if (l == 0)
+		{
+			layerResult = CnnLayers[l]->forward(_inputData);
+		}
+		else
+		{
+			layerResult = CnnLayers[l]->forward(layerResult);
+		}
+	}
+
+	//it's really cursed...
+	std::vector<double> result(layerResult.size() * layerResult.back().size() * layerResult.back().back().size());
+	//.back().back().back().back().back().back().back().back().back().back().back().back().back().back().back()
+
+	std::vector<int> lastConfig = CnnLayers.back()->returnConfig();
+	//{ hGhostSize , wGhostSize, countFilters, countInputGhosts, filterSize, padding};
+
+	int totalIndex = 0;
+
+	for (int l = 0; l < lastConfig[2]; l++)
+	{
+		for (int h = 0; h < lastConfig[0] + lastConfig[5] * 2 - lastConfig[4] + 1; h++)
+		{
+			for (int w = 0; w < lastConfig[1] + lastConfig[5] * 2 - lastConfig[4] + 1; w++)
+			{
+				result[totalIndex] = layerResult[l][h][w];
+				totalIndex++;
+			}
+		}
+	}
+
+	return result;
+	
+}
+
+//====================================================================================================================================================================================================
+//====================================================================================================================================================================================================
+//====================================================================================================================================================================================================
+
+std::vector<double> NeuralNetwork::MultForward(std::vector<std::vector<std::vector<double>>> _inputData)
+{
+	return forward(CnnForward(_inputData));
 }
 
 //====================================================================================================================================================================================================
@@ -385,8 +481,6 @@ void NeuralNetwork::RLtrain(std::vector<double> _inputState, int _action, double
 				gradients[l][n] = 0.0;
 			}
 		}
-
-
 	}
 
 
@@ -582,6 +676,209 @@ void NeuralNetwork::SLtrain(std::vector<double> _inputData, std::vector<double> 
 //====================================================================================================================================================================================================
 //====================================================================================================================================================================================================
 
+void NeuralNetwork::CNN_With_FCN_SL_train(std::vector<std::vector<std::vector<double>>> _inputData, std::vector<double> _want)
+{
+	std::vector<double> getCnnResult = CnnForward(_inputData);
+
+	std::vector<std::vector<double>> layerActivations(countLayers); //save the values of the neurons after applying the activation function
+	std::vector<std::vector<double>> layerNotActivatedSum(countLayers); //I save the values of the neurons BEFORE applying the activation function (or just the "sum")
+
+	for (int i = 0; i < countLayers; i++)
+	{
+		layerActivations[i].resize(LayerNeuronSizes[i], 0.0);
+		layerNotActivatedSum[i].resize(LayerNeuronSizes[i], 0.0);
+	}
+
+	for (int i = 0; i < inputSize; i++)
+	{
+		layers[0].neurons[i].value = getCnnResult[i];
+		layerActivations[0][i] = getCnnResult[i];
+		layerNotActivatedSum[0][i] = getCnnResult[i];
+	}
+
+	for (int l = 1; l < countLayers - 1; l++)
+	{
+		for (int n = 0; n < LayerNeuronSizes[l]; n++)
+		{
+			double sum = layers[l].bias[n];
+
+			for (int w = 0; w < LayerNeuronSizes[l - 1]; w++)
+			{
+				//std::cout << std::format("Layer -> {}   Neuron -> {}   Weight Index -> {}\n", l, n, w);
+
+				sum += layers[l].neurons[n].neuronWeights[w] * layers[l - 1].neurons[w].value;
+			}
+
+			//std::cout << std::format("layer -> {} neuron -> {} before activate -> {} after activate -> {}", l, n, sum, layers[l].neurons[n].value);
+
+			layerNotActivatedSum[l][n] = sum;
+			layers[l].neurons[n].value = functionActivation(sum, hiddenActivation);
+			layerActivations[l][n] = layers[l].neurons[n].value;
+
+
+			//std::cout << "\n\n" << sum << "\n\n";
+		}
+	}
+
+	std::vector<double> activateResult;
+	std::vector<double> notActivateResult;
+
+	for (int n = 0; n < LayerNeuronSizes[countLayers - 1]; n++)
+	{
+		double sum = layers[countLayers - 1].bias[n];
+
+		for (int w = 0; w < LayerNeuronSizes[countLayers - 2]; w++)
+		{
+			sum += layers[countLayers - 1].neurons[n].neuronWeights[w] * layers[countLayers - 2].neurons[w].value;
+		}
+
+		layerNotActivatedSum[countLayers - 1][n] = sum;
+
+		if (outputActivation == SOFTMAX)
+		{
+			layers[countLayers - 1].neurons[n].value = sum;
+		}
+		else
+		{
+			layers[countLayers - 1].neurons[n].value = functionActivation(sum, outputActivation);
+		}
+
+		layerActivations[countLayers - 1][n] = layers[countLayers - 1].neurons[n].value;
+	}
+
+	if (outputActivation == SOFTMAX)
+	{
+		applySoftmax(layerActivations[countLayers - 1]);
+		for (int n = 0; n < LayerNeuronSizes[countLayers - 1]; n++)
+		{
+			layers[countLayers - 1].neurons[n].value = layerActivations[countLayers - 1][n];
+		}
+	}
+
+	//calculates errors
+
+	//calculate output error
+
+	std::vector<double> outputError(outputSize);
+
+	for (int i = 0; i < outputSize; i++)
+	{
+		double Error = layers[countLayers - 1].neurons[i].value - _want[i];
+		if (outputActivation == SOFTMAX)
+		{
+			outputError[i] = Error;
+		}
+		else
+		{
+			outputError[i] = Error * functionActivationDerivative(layerNotActivatedSum[countLayers - 1][i], layers[countLayers - 1].neurons[i].value, outputActivation);
+		}
+	}
+
+
+	//calculate hidden errors
+
+
+	std::vector<std::vector<double>> ERRORS(countLayers);
+
+	for (int i = 0; i < countLayers; i++)
+	{
+		ERRORS[i].resize(LayerNeuronSizes[i], 0.0);
+	}
+
+	for (int i = 0; i < outputSize; i++)
+	{
+		ERRORS[countLayers - 1][i] = outputError[i];
+	}
+
+	for (int l = countLayers - 2; l >= 1; l--)
+	{
+		for (int n = 0; n < LayerNeuronSizes[l]; n++)
+		{
+			double Error = 0.0;
+
+			for (int next = 0; next < LayerNeuronSizes[l + 1]; next++)
+			{
+				Error += ERRORS[l + 1][next] * layers[l + 1].neurons[next].neuronWeights[n];
+			}
+
+			ERRORS[l][n] = Error * functionActivationDerivative(layerNotActivatedSum[l][n], layers[l].neurons[n].value, hiddenActivation);
+		}
+	}
+
+	//after calculating the errors calculate the change in weights
+
+	std::vector<double> gradToCnn(LayerNeuronSizes[0]);
+ 
+	for (int l = 1; l < countLayers; l++)
+	{
+		for (int n = 0; n < LayerNeuronSizes[l]; n++)
+		{
+			if (l == 1)
+			{
+				for (int w = 0; w < LayerNeuronSizes[l - 1]; w++)
+				{
+					gradToCnn[w] += ERRORS[l][n] * layers[l].neurons[n].neuronWeights[w];
+				}
+			}
+
+			for (int w = 0; w < LayerNeuronSizes[l - 1]; w++)
+			{
+				double gradient = ERRORS[l][n] * layers[l - 1].neurons[w].value;
+
+				layers[l].neurons[n].neuronWeights[w] -= alpha * gradient;
+			}
+
+			layers[l].bias[n] -= alpha * ERRORS[l][n];
+		}
+	}
+
+	totalError = 0;
+
+	for (int i = 0; i < outputSize; i++)
+	{
+		if (outputActivation == SOFTMAX)
+		{
+			totalError += -_want[i] * std::log(layers[countLayers - 1].neurons[i].value + 1e-10);
+		}
+		else
+		{
+			totalError += 0.5 * std::pow(_want[i] - layers[countLayers - 1].neurons[i].value, 2);
+		}
+	}
+
+	std::cout << "\n" << totalError << "\n";
+	
+	//{ hGhostSize , wGhostSize, countFilters, countInputGhosts, filterSize, padding};
+
+	std::vector<int> retrunBackConfig = CnnLayers.back()->returnConfig();
+
+	int countInputGhosts = retrunBackConfig[3];
+	int outputH = retrunBackConfig[0] + 2 * retrunBackConfig[5] - retrunBackConfig[4] + 1;
+	int outputW = retrunBackConfig[1] + 2 * retrunBackConfig[5] - retrunBackConfig[4] + 1;
+
+	std::vector<std::vector<std::vector<double>>> gradTensorToCnn(countInputGhosts, std::vector<std::vector<double>>(outputH, std::vector<double>(outputW)));
+
+	int index = 0;
+
+	for (int l = 0; l < countInputGhosts; l++)
+	{
+		for (int h = 0; h < outputH; h++)
+		{
+			for (int w = 0; w < outputW; w++)
+			{
+				gradTensorToCnn[l][h][w] = gradToCnn[index];
+				index++;
+			}
+		}
+	}
+
+}
+
+
+//====================================================================================================================================================================================================
+//====================================================================================================================================================================================================
+//====================================================================================================================================================================================================
+
 std::vector<double> NeuralNetwork::computePolicyGradient(const std::vector<double> _probs, int _action)
 {
 	std::vector<double> resultGradient(_probs.size(), 0.0);
@@ -653,7 +950,7 @@ bool NeuralNetwork::tryLoadWeight()
 
 	fileName += ".bin";
 
-	std::ifstream file(fileName, std::ios::binary);	
+	std::ifstream file(fileName, std::ios::binary);
 
 	if (!file)
 	{
@@ -689,12 +986,12 @@ bool NeuralNetwork::tryLoadWeight()
 				{
 					std::cout << "\n\n" << l << "\n" << n << "\n" << w << "\n" << index << "\n";
 					throw std::runtime_error("Weight set error");
-					
+
 				}
 			}
 		}
 	}
-	
+
 
 	return true;
 }
