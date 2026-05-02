@@ -29,9 +29,11 @@ public:
         return std::distance(result.dat().begin(), std::max_element(result.dat().begin(), result.dat().end()));
     }
 
-    int act(Tensor _state)
+    int act(std::vector<double> _state)
     {
-        Tensor netResult = actor.forward(_state);
+	Tensor state({ (int)_state.size() });
+
+        Tensor netResult = actor.forward(state);
 
         double r = (double)rand() / RAND_MAX;
 
