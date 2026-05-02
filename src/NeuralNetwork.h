@@ -1,103 +1,60 @@
-﻿#pragma once
+#pragma once
 
 #include <vector>
+#include <random>
 #include <iostream>
-#include <optional>
-#include <memory>
+
 
 #include "Layer.h"
-#include "Neuron.h"
-#include "baseCnnLayer.h"
+#include "Tensor.h"
+#include "utils.h"
 
-enum ActivationsType
+enum class LossFunType
 {
-    SIGMOID,
-    TANH,
-    RELU,
-    LEAKY_RELU,
-    LINEAR,
-    SOFTMAX
+    MSE,
+    MAE,
+    HuberLoss,
+    CrossEntropy
 };
-
-enum NNArchMode
-{
-    NORMAL,
-    CNN
-};
-
 
 class NeuralNetwork
 {
 public:
-    NeuralNetwork(std::vector<int> _Layers, double _alpha, ActivationsType _hiddenActivation, ActivationsType _outputActivation) :
-        //set inputs
-
-        LayerNeuronSizes(_Layers),
-        inputSize(_Layers.size() >= 2 ? _Layers[0] : throw std::invalid_argument("error")),
-        outputSize(_Layers.back()),
-        alpha(_alpha),
-        hiddenActivation(_hiddenActivation),
-        outputActivation(_outputActivation),
-        countLayers(_Layers.size())
-
+    ~NeuralNetwork()
     {
-        //initialization of parameters and vectors
-        initializeNeuralNet();
+        for (int i = 0; i < layers.size(); i++)
+        {
+            delete layers[i];
+        }
+
+        std::cout << layers.size() << "\n";
     }
 
-    //Main functions
-    void RLtrain(std::vector<double> _inputState, int _action, double _reward);
-    void SLtrain(std::vector<double> _inputData, std::vector<double> _want);
-    void CNN_Train(std::vector<double> _inputGrad);
-    void CNN_With_FCN_SL_train(std::vector<std::vector<std::vector<double>>> _inputData, std::vector<double> _want);
+    /*NeuralNetwork(const NeuralNetwork&) = delete;
+    NeuralNetwork& operator=(const NeuralNetwork&) = delete;*/
 
-    std::vector<double> forward(std::vector<double> _inputData);
-    std::vector<double> CnnForward(std::vector<std::vector<std::vector<double>>> _inputData);
-    std::vector<double> MultForward(std::vector<std::vector<std::vector<double>>> _inputData);
+    void init(double _alpha);
 
-    void init(std::vector<int> _Layers, double _alpha, ActivationsType _hiddenActivation, ActivationsType _outputActivation);
-    
-    static double functionActivation(double _input, ActivationsType _AT);
-    static double functionActivationDerivative(double _input, double _activatedInput, ActivationsType _AT);
+    void add(Layer* _layer);
+    Tensor forward(Tensor _data);
+    void SLtrain(Tensor _data, Tensor _want);
+    void RLtrain(Tensor _state, int _action_, double _reward);
 
-    //User-defined functions
-    bool tryLoadWeight();
-    void trySaveWeight();
-    void reInit(std::vector<int> _Layers, double _alpha, ActivationsType _hiddenActivation, ActivationsType _outputActivation); //If necessary, can completely change the neural network.
+    double getError()
+    {
+        return totalError;
+    }
 
-    //Auxiliary functions
-    void checkСompatibility();
-
-    //Debug Functions
-    void printWeight(); //Outputs all internal information about the neural network including weights, bias neurons, and neuron values
-    void printConfig(); //Outputs information about the neural network
-
-    //Auxiliary variables
-    double totalError = 1.0;
-    std::vector<std::unique_ptr<baseCnnLayer>> CnnLayers;
 private:
-    //mains
-    void initializeNeuralNet();
-    void initializeNeuralNetCnnPart();
-    void applySoftmax(std::vector<double>& _inputData);
-    std::vector<double> computePolicyGradient(const std::vector<double> _probs, int _action);
+    std::vector<Layer*> layers;
 
+    double totalError;
+    double alpha;
+    double beta = 0.001;
 
-    std::vector<Layer> layers; //All layers
-    std::vector<int> LayerNeuronSizes;
-    std::vector<std::vector<int>> CnnLayersNeuronSizes;
-
-    int inputSize; //Number of input neurons
-    int outputSize; //Number of output neurons
-    int countLayers; //Total number of layer
-    int countCnnLayers;
-    double alpha; //Learning rate
-    //helped
-
-    ActivationsType hiddenActivation;
-    ActivationsType outputActivation;
-
-    NNArchMode mode;
-
+    bool adam_used = false;
+    bool impulse_used = false;
+    bool gradClipping_used = false;
 
 };
+
